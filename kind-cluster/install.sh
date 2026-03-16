@@ -1,82 +1,106 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-set -e  # Exit immediately if a command exits with a non-zero status
+set -e
 set -o pipefail
 
-echo "🚀 Starting installation of Docker, Kind, and kubectl..."
+echo "🚀 Installing Docker, Kind, and kubectl..."
 
-# ----------------------------
-# 1. Install Docker
-# ----------------------------
-if ! command -v docker &>/dev/null; then
-  echo "📦 Installing Docker..."
-  sudo apt-get update -y
-  sudo apt-get install -y docker.io
+# -------------------------------------------------
+# Detect OS
+# -------------------------------------------------
+OS=$(uname | tr '[:upper:]' '[:lower:]')
 
-  echo "👤 Adding current user to docker group..."
-  sudo usermod -aG docker "$USER"
+# -------------------------------------------------
+# Detect Architecture
+# -------------------------------------------------
+ARCH=$(uname -m)
 
-  echo "✅ Docker installed and user added to docker group."
+if [[ "$ARCH" == "x86_64" ]]; then
+    ARCH="amd64"
+elif [[ "$ARCH" == "arm64" || "$ARCH" == "aarch64" ]]; then
+    ARCH="arm64"
 else
-  echo "✅ Docker is already installed."
+    echo "❌ Unsupported architecture: $ARCH"
+    exit 1
 fi
 
-# ----------------------------
-# 2. Install Kind (based on architecture)
-# ----------------------------
+echo "🖥 OS: $OS"
+echo "⚙️ Architecture: $ARCH"
+
+# -------------------------------------------------
+# Install Docker (Linux only)
+# -------------------------------------------------
+if [[ "$OS" == "linux" ]]; then
+    if ! command -v docker &>/dev/null; then
+        echo "📦 Installing Docker..."
+
+        sudo apt-get update -y
+        sudo apt-get install -y docker.io
+
+        sudo systemctl enable docker
+        sudo systemctl start docker
+
+        sudo usermod -aG docker "$USER"
+
+        echo "✅ Docker installed."
+        echo "⚠️ You may need to logout/login for docker group changes."
+    else
+        echo "✅ Docker already installed."
+    fi
+else
+    echo "ℹ️ macOS detected."
+    echo "⚠️ Please install Docker Desktop manually:"
+    echo "https://www.docker.com/products/docker-desktop"
+fi
+
+# -------------------------------------------------
+# Install Kind
+# -------------------------------------------------
 if ! command -v kind &>/dev/null; then
-  echo "📦 Installing Kind..."
+    echo "📦 Installing Kind..."
 
-  ARCH=$(uname -m)
-  if [ "$ARCH" = "x86_64" ]; then
-    curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64
-  elif [ "$ARCH" = "aarch64" ]; then
-    curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-arm64
-  else
-    echo "❌ Unsupported architecture: $ARCH"
-    exit 1
-  fi
+    KIND_VERSION="v0.29.0"
 
-  chmod +x ./kind
-  sudo mv ./kind /usr/local/bin/kind
-  echo "✅ Kind installed successfully."
+    curl -Lo ./kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-${OS}-${ARCH}"
+
+    chmod +x ./kind
+    sudo mv ./kind /usr/local/bin/kind
+
+    echo "✅ Kind installed."
 else
-  echo "✅ Kind is already installed."
+    echo "✅ Kind already installed."
 fi
 
-# ----------------------------
-# 3. Install kubectl (based on architecture)
-# ----------------------------
+# -------------------------------------------------
+# Install kubectl
+# -------------------------------------------------
 if ! command -v kubectl &>/dev/null; then
-  echo "📦 Installing kubectl (latest stable version)..."
+    echo "📦 Installing kubectl..."
 
-  ARCH=$(uname -m)
-  VERSION=$(curl -Ls https://dl.k8s.io/release/stable.txt)
+    VERSION=$(curl -Ls https://dl.k8s.io/release/stable.txt)
 
-  if [ "$ARCH" = "x86_64" ]; then
-    curl -Lo ./kubectl "https://dl.k8s.io/release/${VERSION}/bin/linux/amd64/kubectl"
-  elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-    curl -Lo ./kubectl "https://dl.k8s.io/release/${VERSION}/bin/linux/arm64/kubectl"
-  else
-    echo "❌ Unsupported architecture: $ARCH"
-    exit 1
-  fi
+    curl -Lo kubectl "https://dl.k8s.io/release/${VERSION}/bin/${OS}/${ARCH}/kubectl"
 
-  chmod +x ./kubectl
-  sudo mv ./kubectl /usr/local/bin/kubectl
-  echo "✅ kubectl installed successfully."
+    chmod +x kubectl
+    sudo mv kubectl /usr/local/bin/kubectl
+
+    echo "✅ kubectl installed."
 else
-  echo "✅ kubectl is already installed."
+    echo "✅ kubectl already installed."
 fi
 
-# ----------------------------
-# 4. Confirm Versions
-# ----------------------------
+# -------------------------------------------------
+# Verify installation
+# -------------------------------------------------
 echo
-echo "🔍 Installed Versions:"
-docker --version
+echo "🔎 Installed versions"
+
+if command -v docker &>/dev/null; then
+    docker --version
+fi
+
 kind --version
-kubectl version --client --output=yaml
+kubectl version --client
 
 echo
-echo "🎉 Docker, Kind, and kubectl installation complete!"
+echo "🎉 Installation complete!"
